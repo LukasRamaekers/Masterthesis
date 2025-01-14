@@ -1,0 +1,28 @@
+# Ignore all files and file types mentioned
+coords_to_csv.m
+ecef_to_geod.m
+encoder_data.mat
+enu_to_geod.m
+geod_to_cart.m
+Gnss.txt
+gnss_data.mat
+Local.txt
+Local_short.txt
+odom_opt.m
+path_planning_adjusted_bezier_cm.m
+path_planning_compare.m
+path_planning_tests.m
+plotGpsPos.m
+position.m
+rosbagdata.m
+run_simulation.m
+short.txt
+short_gnss.txt
+wheel_encoders.m
+
+# Optionally ignore all CSV, TXT, MAT, and MATLAB files
+# *.csv
+# *.txt
+# *.mat
+# *.m
+# *.mlx
