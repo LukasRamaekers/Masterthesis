@@ -173,6 +173,8 @@ function [e, n, u] = coordsConv()
     refH = h(1);
     
     [e, n, u] = ecef2enu(x, y, z, refLat, refLon, refH, wgs84);
+    plot(e, n, '.');
+    axis equal;
     % e = e / 100;
     % n = n / 100;
     % u = u / 100;

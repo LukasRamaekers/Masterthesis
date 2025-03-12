@@ -1,5 +1,9 @@
 # Ignore all files and file types mentioned
+A_star_patplanner.m
+BSplinePath.m
+BSplinePathCurvatureControl.m
 coords_to_csv.m
+draaistraal.m
 ecef_to_geod.m
 encoder_data.mat
 enu_to_geod.m
@@ -19,6 +23,8 @@ run_simulation.m
 short.txt
 short_gnss.txt
 wheel_encoders.m
+pathplanner_test.m
+MPC_test.m
 
 # Optionally ignore all CSV, TXT, MAT, and MATLAB files
 # *.csv
