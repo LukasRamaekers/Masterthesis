@@ -25,8 +25,12 @@ short_gnss.txt
 wheel_encoders.m
 pathplanner_test.m
 MPC_test.m
+MPC_examples.m
+MPC_toolbox_test.m
+
 
 # Optionally ignore all CSV, TXT, MAT, and MATLAB files
+*.asv
 # *.csv
 # *.txt
 # *.mat
