@@ -1,11 +1,11 @@
-function [current_position, current_yaw] = positionCalculation(encoderData, yaw, reset)
+function [current_position, current_yaw, steer_angle] = positionCalculation(encoderData, yaw, reset)
     persistent previous_encoder previous_angle x_previous y_previous cum_theta_wheel
     
     if (reset)
         previous_encoder = [encoderData.FrontLeft, encoderData.FrontRight, encoderData.RearLeft, encoderData.RearRight];
         previous_angle = 0;
-        x_previous = 1; 
-        y_previous = 2;
+        x_previous = 0; 
+        y_previous = 0;
         cum_theta_wheel = yaw;
     end
 

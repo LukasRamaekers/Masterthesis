@@ -1,4 +1,4 @@
-function encoder_result = Simulation_model(linear_speed, desired_angle, dt, reset, finished)
+function encoder_result = Simulation_model(linear_speed, steer_cmd, dt, reset, finished)
     % Parameters
     L1 = 1.2; L2 = 0.8;
     W1 = 1.5; W2 = 1.5;
@@ -38,26 +38,32 @@ function encoder_result = Simulation_model(linear_speed, desired_angle, dt, rese
         time_elapsed = 0;
         perturbed_wheel_radius = wheel_radius + randn * wheel_noise_std; 
     end
-
-    % Encoder simulation variables
-    piston_encoder_value = ang2enc(steering_angle);
     
     % Control inputs
     
+    % Eventueel aanpassen om correcter de versnellibg door te geven 
+    % zit nog een traagheid tussen op de paloxtruck
     if linear_speed >= 0
         v_current = min(min(v_current + max_accel * dt, linear_speed), max_speed);
     else
         v_current = max(max(v_current - max_accel * dt, linear_speed), -max_speed);
     end
 
-    % Update steering angle with max acceleration
-    angle_error = rad2deg(desired_angle) - steering_angle;
-    steering_angle_rate = max(-max_steering_speed, ...
-                          min(max_steering_speed, ...
-                          steering_angle_rate + max_steering_accel * dt * sign(angle_error)));
-    steering_angle = max(-35, min(35, steering_angle + steering_angle_rate * dt));
+    % Bepaal de snelheid waarmee de steer_cmd veranderingen kan doorvoeren
+    steering_angle_rate_cmd = steer_cmd * max_steering_speed;
     
-    % disp(steering_angle)
+    % Bereken verschil tussen gewenste en huidige rate
+    rate_error = steering_angle_rate_cmd - steering_angle_rate;
+    
+    % Voeg tegenwerkend effect toe (bijv. demping bij snelheid > gewenste snelheid)
+    steering_angle_rate = steering_angle_rate + ...
+        max(-max_steering_accel * dt, min(max_steering_accel * dt, rate_error));
+    
+    % Werk stuurhoek bij
+    steering_angle = steering_angle + steering_angle_rate * dt;
+
+    % Beperk stuurhoek fysiek
+    steering_angle = max(-35, min(35, steering_angle));
 
     % Update piston encoder value for the current steering angle
     piston_encoder_value = ang2enc(steering_angle);
@@ -113,64 +119,6 @@ function encoder_result = Simulation_model(linear_speed, desired_angle, dt, rese
     if finished
         kinematica(encoder_data)
     end    
-end
-
-function plotCoords(table)
-    encoders = table{:, 2:5};
-    steer_encoder = table{:, 6};
-    
-    delta_encoders=diff(encoders);
-    
-    wheel_f=2*pi*[0.245 0.245 0.23 0.23]/195.2;
-    
-    enc2ang=@(x) -0.6711 * (x.^4) + 0.6546 * (x.^3) - 0.3672 * (x.^2) - 1.155 * x + 0.6783;
-    
-    delta_pos=delta_encoders.*wheel_f;
-    avg_delta_pos=mean(delta_pos,2);
-    steer_angle=enc2ang(steer_encoder/32767);
-    delta_angle=diff(steer_angle);
-    
-    L1=1.2;
-    L2=0.8;
-    
-    delta_theta_steer=(L2*delta_angle+avg_delta_pos.*sin(steer_angle(1:end-1)))./(L2+L1*cos(steer_angle(1:end-1)));
-    theta_steer=-cumsum([-pi/2;delta_theta_steer]);
-    delta_x_steer=avg_delta_pos.*cos(theta_steer(1:end-1));
-    delta_y_steer=avg_delta_pos.*sin(theta_steer(1:end-1));
-    x_steer=cumsum([0;delta_x_steer]);
-    y_steer=cumsum([0;delta_y_steer]);
-    
-    p1 = plot(x_steer,y_steer, 'b');
-    p1.LineWidth = 2;
-    axis equal
-    xlabel("x [m]")
-    ylabel("y [m]")
-    grid on
-    hold on;
-
-    w = 1.5;
-    d_left_front = delta_pos(:, 1);
-    d_right_front = delta_pos(:, 2);
-    d_left_rear = delta_pos(:, 3);
-    d_right_rear = delta_pos(:, 4);
-    
-    d_theta_wheel_front = (d_left_front - abs(d_right_front)) / w;
-    d_theta_wheel_rear = (d_left_rear - abs(d_right_rear)) / w;
-    
-    d_theta_wheel_avg = (d_theta_wheel_front + d_theta_wheel_rear) / 2;
-    
-    theta_wheel = -cumsum([-pi/2;-d_theta_wheel_avg]);
-    delta_x_wheel = avg_delta_pos.*cos(theta_wheel(1:end-1));
-    delta_y_wheel = avg_delta_pos.*sin(theta_wheel(1:end-1));
-    x_wheel=cumsum([0;delta_x_wheel]);
-    y_wheel=cumsum([0;delta_y_wheel]);
-    
-    p2 = plot(x_wheel,y_wheel, 'r');
-    p2.LineWidth = 2;
-    axis equal
-    xlabel("x [m]")
-    ylabel("y [m]")
-    grid on
 end
 
 function encoder_value = ang2enc(steering_angle)
@@ -246,13 +194,9 @@ function max_a = kinematica(encoder_table)
     
     % steerEncoder = encoder_table(:, 6);
     % steerEncoder = double(steerEncoder);
-    % 
     % enc2ang=@(x) -0.6711 * (x.^4) + 0.6546 * (x.^3) - 0.3672 * (x.^2) - 1.155 * x + 0.6783;
-    % 
     % steer_angle = enc2ang(steerEncoder/32767);
     % 
-    % delta_steer = diff(steer_angle);
-    
     steer_angle = encoder_table(:, 7);
     delta_steer = diff(steer_angle);
 

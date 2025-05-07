@@ -1,31 +1,37 @@
-current_position = [1, 2];
+current_position = [0, 0];
 L1 = 1.2;
 L2 = 0.8;
+steer_cmd = 0;
 steering_angle = 0;
-max_steering_rate = 0.1745;
+max_steering_speed = 0.29;
 max_steering_angle = deg2rad(35);
 linear_velocity = 0;
 max_velocity = 0.5;
-dt = 0.01;
-
-list = [];
-
-command_table = [];
-
-[e, n, u] = coordsConv();
-[path_x, path_y, waypoints] = pathplanner([e, n, u]);
+dt = 0.05;
+steps = 10000;
 current_waypoint_index = 1;
 
-prediction_horizon = 50;
-Ts = 0.01;
+waypoint_horizon = 10;
+prediction_horizon = 6;
+Ts = 0.5;
 
-yaw = getStartYaw([e, n, u], 2) + 0.1; % In radians
+list = [];
+command_table = [];
+states_table = [];
+
+%[e, n, u] = coordsConv_old();
+%[path_x, path_y, waypoints] = pathplanner([e, n, u]);
+%yaw = getStartYaw([e, n, u], 2) + 0.1;
+
+coords = coordsConv();
+[path_x, path_y, waypoints] = pathplanner_new(coords);
+yaw = getStartYaw(coords, 2);
+
 encoder_data = Simulation_model(0, 0, 0, true, false);
 positionCalculation(encoder_data, yaw, true);
-current_position = [1, 2];
 
-u0 = [linear_velocity, steering_angle];
-mpcobj = initialise_mpc(L1, L2, prediction_horizon, Ts, max_steering_angle, [current_position, yaw], u0);
+u0 = [linear_velocity, steer_cmd];
+mpcobj = initialise_mpc(L1, L2, prediction_horizon, Ts, max_steering_speed, [current_position, yaw, steering_angle], u0);
 
 figure;
 hold on;
@@ -43,16 +49,25 @@ current_position_plot = plot(current_position(1), current_position(2), 'bo', ...
 
 position_history = [];
 
-tic
-while true
-    if current_waypoint_index > size(waypoints, 1)
+% tic
+for i = 1:1:steps
+    if current_waypoint_index > size(waypoints, 1) - 1 
         disp('Reached the final waypoint!');
         plot(position_history(:, 1), position_history(:, 2), 'b-', 'LineWidth', 1.2);
         legend('Waypoints', 'Huidige positie', 'Gereden pad');
-        Simulation_model(0, steering_angle, dt, false, true);
+        Simulation_model(0, steer_cmd, dt, false, true);
+        break;
+    end
+    
+    if i == steps
+        disp('Unable to reach final waypoint, max number of steps reached');
+        plot(position_history(:, 1), position_history(:, 2), 'b-', 'LineWidth', 1.2);
+        legend('Waypoints', 'Huidige positie', 'Gereden pad');
+        Simulation_model(0, steer_cmd, dt, false, true);
         break;
     end
 
+    tic
     % Find the closest waypoint dynamically
     distances = vecnorm(waypoints(:, 1:2) - current_position, 2, 2);
     
@@ -70,35 +85,77 @@ while true
     distance_to_waypoint = norm(target_waypoint - current_position);
 
     % Move to the next waypoint if within a threshold
-    if distance_to_waypoint < 0.2
+    if distance_to_waypoint < 0.5
         current_waypoint_index = current_waypoint_index + 1;
         continue;
     end
+    delta_t(4) = toc;
     
-    [current_position, current_yaw] = positionCalculation(encoder_data, yaw, false);
+    tic
+    [current_position, current_yaw, steering_angle] = positionCalculation(encoder_data, yaw, false);
        
     % disp(current_position);
     yaw = current_yaw;
     
-    x = [current_position, yaw];
-    
-    [u,~,~] = nlmpcmove(mpcobj, x, u0, [waypoints(min(current_waypoint_index + 10, length(waypoints)),:), yaw]);
-    linear_velocity = u(1);
-    steering_angle = u(2);
+    x = [current_position, yaw, steering_angle];
+    delta_t(5) = toc;
 
-    command_table = [command_table; steering_angle, linear_velocity];
+    tic
+    ref = generateReference(waypoints(min(current_waypoint_index, length(waypoints)),:), waypoints, waypoint_horizon);
+    [u,x,info] = nlmpcmove(mpcobj, x, u0, ref);
+    % disp(info);
+    linear_velocity = u(1);
+    steer_cmd = u(2);
+    delta_t(1) = toc;
+    
+    tic
+    command_table = [command_table; steer_cmd, linear_velocity];
+    states_table = [states_table; x];
 
     position_history = [position_history; current_position];
-    set(current_position_plot, 'XData', current_position(1), 'YData', current_position(2));    
-    %plot(position_history(:, 1), position_history(:, 2), 'b-', 'LineWidth', 1.2);
-    %drawnow;
+    delta_t(2) = toc;
+    
+    tic
+    if mod(i, 100) == 0
+        set(current_position_plot, 'XData', current_position(1), 'YData', current_position(2));    
+        plot(position_history(:, 1), position_history(:, 2), 'b-', 'LineWidth', 1.2);
 
-    encoder_data = Simulation_model(linear_velocity, steering_angle, dt, false, false);
+        % Bereken de richting van de pijl
+        arrow_length = 0.5; % Lengte van de pijl, pas aan indien nodig
+        dx = arrow_length * cos(current_yaw);
+        dy = arrow_length * sin(current_yaw);
+        
+        % Teken de pijl
+        quiver(current_position(1), current_position(2), dx, dy, 0, ...
+               'Color', 'r', 'LineWidth', 1.5, 'MaxHeadSize', 2);
+
+        drawnow limitrate;
+    end
+    delta_t(3) = toc;
+
+    tic
+    encoder_data = Simulation_model(linear_velocity, steer_cmd, dt, false, false);
+    delta_t(4) = toc;
     %pause(0.01);
-end
-toc
 
-function [e, n, u] = coordsConv()
+    %disp(delta_t);
+end
+% toc
+
+function coords = coordsConv()
+    %inputFileName = 'straight_path.csv';
+    %inputFileName = 'turning_path.csv';
+    %inputFileName = 'circle_path.csv';
+    %inputFileName = 'figure8_path_scaled.csv';
+    inputFileName = 'turning_path_edit.csv';
+
+    opts = detectImportOptions(inputFileName);
+    opts = setvartype(opts, {'x', 'y'}, 'double');
+    coords = readtable(inputFileName, opts);
+    coords = table2array(coords);
+end
+
+function [e, n, u] = coordsConv_old()
     inputFileName = 'coordinates.csv';
     opts = detectImportOptions(inputFileName);
     opts = setvartype(opts, {'Latitude', 'Longitude', 'Height'}, 'double');
@@ -144,3 +201,40 @@ function yaw = getStartYaw(enu_coords, min_distance)
     error('No points found more than the specified distance apart.');
 end
 
+function ref = generateReference(currentPos, waypoints, horizon)
+    % currentPos: [x, y] current robot position
+    % waypoints: Nx2 matrix of [x, y] waypoints
+    % horizon: number of steps to look ahead (MPC prediction horizon)
+    
+    % Only consider waypoints ahead of the current waypoint index
+    % Make new array with only waypoints ahead
+    % Set a max view check
+    % valid_indices = current_waypoint_index:size(waypoints, 1);
+    % [~, closest_valid_index] = min(distances(valid_indices));
+    % closest_waypoint_index = valid_indices(closest_valid_index);
+
+    % Find the closest waypoint index to the current position
+    distances = vecnorm(waypoints - currentPos, 2, 2);
+    [~, idx] = min(distances);
+
+    % Make sure we don't go out of bounds
+    lastIdx = min(idx + horizon - 1, size(waypoints, 1) - 1);
+
+    % Initialize reference
+    ref = zeros(horizon, 4); % [x y theta gamma]
+
+    for i = 1:horizon
+        currentIdx = min(idx + i - 1, size(waypoints,1) - 1);
+        nextIdx = currentIdx + 1;
+
+        % Get position
+        pos = waypoints(currentIdx, :);
+
+        % Estimate heading
+        delta = waypoints(nextIdx, :) - waypoints(currentIdx, :);
+        theta = atan2(delta(2), delta(1)); % heading toward the next point
+
+        % Fill reference
+        ref(i, :) = [pos, theta, 0];
+    end
+end
